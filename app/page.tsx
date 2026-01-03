@@ -2,16 +2,17 @@
 
 import { useState, useEffect } from 'react'
 import { Video } from '@/lib/youtube'
-import { getAllVideos } from '@/lib/youtube'
+import { getAllVideos, getPopularVideos } from '@/lib/youtube'
 import VideoCard from '@/components/VideoCard'
 import VideoModal from '@/components/VideoModal'
 import ChannelFilter from '@/components/ChannelFilter'
 import LoadingAnimation from '@/components/LoadingAnimation'
 import LoadingSkeleton from '@/components/LoadingSkeleton'
-import { Sparkles } from 'lucide-react'
+import { Sparkles, TrendingUp } from 'lucide-react'
 
 export default function Home() {
   const [videos, setVideos] = useState<Video[]>([])
+  const [popularVideos, setPopularVideos] = useState<Video[]>([])
   const [filteredVideos, setFilteredVideos] = useState<Video[]>([])
   const [selectedVideo, setSelectedVideo] = useState<Video | null>(null)
   const [selectedChannel, setSelectedChannel] = useState<string | null>(null)
@@ -24,9 +25,16 @@ export default function Home() {
       try {
         setLoading(true)
         setError(null)
-        const allVideos = await getAllVideos()
+        
+        // 通常の動画と人気動画を並行して取得
+        const [allVideos, popular] = await Promise.all([
+          getAllVideos(),
+          getPopularVideos()
+        ])
+        
         setVideos(allVideos)
         setFilteredVideos(allVideos)
+        setPopularVideos(popular)
       } catch (err) {
         console.error('Error fetching videos:', err)
         setError('動画の取得に失敗しました。APIキーを確認してください。')
@@ -89,9 +97,42 @@ export default function Home() {
           </div>
         ) : (
           <>
-            {/* 動画数表示 */}
-            <div className="mb-6 text-sm text-gray-400">
-              {filteredVideos.length} 本の動画が見つかりました
+            {/* 人気動画セクション */}
+            {popularVideos.length > 0 && selectedChannel === null && (
+              <div className="mb-12">
+                <div className="flex items-center gap-3 mb-6">
+                  <div className="p-2 bg-gradient-to-br from-orange-500 to-red-500 rounded-xl">
+                    <TrendingUp className="w-5 h-5 text-white" />
+                  </div>
+                  <h2 className="text-xl font-bold bg-gradient-to-r from-orange-400 to-red-400 bg-clip-text text-transparent">
+                    各チャンネルの人気動画トップ3
+                  </h2>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
+                  {popularVideos.map((video) => (
+                    <div key={`popular-${video.id}`} className="relative">
+                      <div className="absolute -top-2 -left-2 z-10 px-2 py-1 bg-gradient-to-r from-orange-500 to-red-500 rounded-lg text-xs font-bold text-white shadow-lg">
+                        🔥 人気
+                      </div>
+                      <VideoCard
+                        video={video}
+                        onClick={() => setSelectedVideo(video)}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* 最新動画セクション */}
+            <div className="mb-6">
+              <h2 className="text-lg font-semibold mb-4 text-gray-300">
+                {selectedChannel ? 'フィルター結果' : '最新動画'}
+              </h2>
+              <div className="text-sm text-gray-400 mb-4">
+                {filteredVideos.length} 本の動画が見つかりました
+                {selectedChannel === null && '（ショート動画は除外済み）'}
+              </div>
             </div>
 
             {/* 動画グリッド */}
