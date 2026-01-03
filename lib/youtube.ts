@@ -33,8 +33,6 @@ export function getUploadsPlaylistId(channelId: string): string {
 export const CHANNELS: Channel[] = [
   { id: 'UCY1kMZp36IQSyNx_9h4mpCg', name: 'Mark Rober' },
   { id: 'UCnmGIkw-KdI0W5siakKPKog', name: 'Ryan Trahan' },
-  { id: 'UCVi2lI40LetxLBKn-rtWC3A', name: 'Crunchyroll Collection' },
-  { id: 'UC6pGDc4bFGD1_36IKv3FnYg', name: 'Crunchyroll' },
   { id: 'UCwWhs_6x42TyRM4Wstoq8HA', name: 'The Daily Show' },
   { id: 'UCwmZiChSryoWQCZMIQezgTg', name: 'BBC Earth' },
 ]
@@ -157,11 +155,12 @@ export function filterShorts(videos: Video[]): Video[] {
 export async function getAllVideos(): Promise<Video[]> {
   const allVideos: Video[] = []
 
-  // 各チャンネルから動画を取得
+  // 各チャンネルから動画を取得（各チャンネルから15個以上表示するため、多めに取得）
   for (const channel of CHANNELS) {
     try {
       const playlistId = getUploadsPlaylistId(channel.id)
-      const videos = await getVideosFromPlaylist(playlistId, 20) // 多めに取得
+      // ショート除外を考慮して、30個取得（15個以上残るように）
+      let videos = await getVideosFromPlaylist(playlistId, 30)
       
       // チャンネル名を設定（APIから取得できない場合に備えて）
       videos.forEach(video => {
@@ -170,31 +169,58 @@ export async function getAllVideos(): Promise<Video[]> {
         }
       })
       
-      allVideos.push(...videos)
+      // 動画の詳細情報を取得
+      const videoIds = videos.map(v => v.videoId)
+      const detailsMap = await getVideoDetails(videoIds)
+      
+      // 詳細情報を動画に追加
+      videos.forEach(video => {
+        const details = detailsMap.get(video.videoId)
+        if (details) {
+          video.duration = details.duration
+          video.viewCount = details.viewCount
+        }
+      })
+      
+      // ショート動画を除外
+      const filteredVideos = filterShorts(videos)
+      
+      // 15個以上になるように、必要に応じて追加取得
+      if (filteredVideos.length < 15) {
+        // 追加で取得を試みる（最大50個まで）
+        const additionalVideos = await getVideosFromPlaylist(playlistId, 50)
+        const additionalVideoIds = additionalVideos.map(v => v.videoId)
+        const additionalDetailsMap = await getVideoDetails(additionalVideoIds)
+        
+        additionalVideos.forEach(video => {
+          if (!video.channelTitle) {
+            video.channelTitle = channel.name
+          }
+          const details = additionalDetailsMap.get(video.videoId)
+          if (details) {
+            video.duration = details.duration
+            video.viewCount = details.viewCount
+          }
+        })
+        
+        const additionalFiltered = filterShorts(additionalVideos)
+        // 既存の動画とマージ（重複を避ける）
+        const existingIds = new Set(filteredVideos.map(v => v.videoId))
+        const newVideos = additionalFiltered.filter(v => !existingIds.has(v.videoId))
+        filteredVideos.push(...newVideos)
+      }
+      
+      // 各チャンネルから最低15個、最大で取得した分だけ追加
+      const channelVideos = filteredVideos.slice(0, Math.max(15, filteredVideos.length))
+      allVideos.push(...channelVideos)
     } catch (error) {
       console.error(`Error fetching videos for channel ${channel.name}:`, error)
       // エラーが発生しても他のチャンネルの取得は続行
     }
   }
 
-  // 動画の詳細情報を取得
-  const videoIds = allVideos.map(v => v.videoId)
-  const detailsMap = await getVideoDetails(videoIds)
-  
-  // 詳細情報を動画に追加
-  allVideos.forEach(video => {
-    const details = detailsMap.get(video.videoId)
-    if (details) {
-      video.duration = details.duration
-      video.viewCount = details.viewCount
-    }
-  })
-
-  // ショート動画を除外
-  const filteredVideos = filterShorts(allVideos)
-
   // 投稿日時でソート（新しい順）
-  return filteredVideos.sort((a, b) => 
+  return allVideos.sort((a, b) => 
     new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime()
   )
 }
@@ -207,7 +233,7 @@ export async function getPopularVideos(): Promise<Video[]> {
   for (const channel of CHANNELS) {
     try {
       const playlistId = getUploadsPlaylistId(channel.id)
-      const videos = await getVideosFromPlaylist(playlistId, 20) // 多めに取得してから選ぶ
+      const videos = await getVideosFromPlaylist(playlistId, 30) // ショート除外を考慮して多めに取得
       
       // チャンネル名を設定
       videos.forEach(video => {
