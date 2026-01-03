@@ -136,11 +136,19 @@ export async function getVideoDetails(videoIds: string[]): Promise<Map<string, {
   return detailsMap
 }
 
-// ショート動画を除外（60秒未満の動画を除外）
+// ショート動画を除外（60秒未満の動画、またはタイトルに#Shortsが含まれる動画を除外）
 export function filterShorts(videos: Video[]): Video[] {
   return videos.filter(video => {
-    // durationが未取得の場合は除外しない（エラー回避のため）
-    if (video.duration === undefined) return true
+    // タイトルに#Shortsが含まれている場合は除外
+    if (video.title.toLowerCase().includes('#shorts') || 
+        video.title.toLowerCase().includes('shorts')) {
+      return false
+    }
+    
+    // durationが未取得の場合は除外（安全のため）
+    if (video.duration === undefined) return false
+    
+    // 60秒未満の動画を除外
     return video.duration >= 60
   })
 }
